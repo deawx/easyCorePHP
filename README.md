@@ -36,3 +36,4 @@ easyCorePHP ถูกพัฒนาโดย deawx หากคุณมีข�
 - **อีเมล:** [msdos43@gmail.com](mailto:msdos43@gmail.com)
 - **Instagram**: [@deawx](https://instagram.com/deawx)
 - **Telegram:** [@phpthailand](https://t.me/phpthailand)
+- **ไลน์:** deawx
