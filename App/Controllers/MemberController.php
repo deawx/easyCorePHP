@@ -61,7 +61,8 @@ class MemberController extends Controller {
                 'id' => $user['id'],
                 'name' => $user['name'],
                 'surname' => $user['surname'],
-                'email' => $user['email']
+                'email' => $user['email'],
+                'level' => $user['level']
             ]
         ]);
     }

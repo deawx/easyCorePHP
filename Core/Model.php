@@ -7,15 +7,23 @@ namespace Core;
 use Medoo\Medoo;
 use Core\Security;
 
-class Model {
+// class Model {
+abstract class Model {
     protected ?Medoo $db;
     protected string $table = '';  // Initialize as empty string
     protected array $fillable = [];
     protected ?int $id = null;
     protected ?string $error = null;  // Add error property
 
+    // public function __construct() {
+    //     $this->db = Database::getInstance()->getConnection();
+    // }
     public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
+        $db = Database::getInstance()->getConnection();
+        if (!$db instanceof Medoo) {
+            throw new \RuntimeException('ไม่สามารถเชื่อมต่อฐานข้อมูลได้');
+        }
+        $this->db = $db;
     }
 
     /**
@@ -80,48 +88,36 @@ class Model {
     }
 
     public function save(): bool {
-        if (empty($this->table)) {
-            $this->error = 'No table name specified';
-            return false;
-        }
-
-        $data = [];
-        foreach ($this->fillable as $field) {
-            if (isset($this->$field)) {
-                $data[$field] = is_string($this->$field) ?
-                    Security::sanitize($this->$field) :
-                    $this->$field;
-            }
-        }
-
-        if (empty($data)) {
-            $this->error = 'No data to save';
-            return false;
-        }
-
         try {
-            $result = $this->db->insert($this->table, $data);
+            $data = [];
+            foreach ($this->fillable as $field) {
+                if (isset($this->$field)) {
+                    $data[$field] = $this->$field;
+                }
+            }
 
-            if ($this->db->error) {
-                $this->error = "Database error";
+            if (empty($data)) {
+                $this->error = "No data to save";
                 return false;
             }
 
-            if ($result && $result->rowCount() > 0) {
-                $this->id = (int)$this->db->id();
-                $data['id'] = $this->id;
+            // Add timestamps
+            $data['created_at'] = date('Y-m-d H:i:s');
 
-                foreach ($data as $key => $value) {
-                    $this->$key = $value;
-                }
+            // Sanitize data
+            $data = Security::sanitizeArray($data);
 
-                return true;
+            $result = $this->db->insert($this->table, $data);
+
+            if ($result === null) {
+                $this->error = "Database insert failed";
+                return false;
             }
 
-            $this->error = 'Failed to insert record';
-            return false;
+            $this->id = (int)$this->db->id();
+            return true;
         } catch (\Exception $e) {
-            $this->error = 'Database error occurred';
+            $this->error = "Save failed";
             return false;
         }
     }

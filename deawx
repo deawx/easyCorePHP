@@ -16,24 +16,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 $dotenv = Dotenv::createImmutable(__DIR__);
 $dotenv->load();
 
-// รับค่าการเรียก command  เข้ามา
-// Command : php deawx make:model cyberthai -v
-// Array
-// (
-// [0] => deawx
-// [1] => make:model
-// [2] => cyberthai
-// [3] => -v
-// )
-// $sh->dd($argv);
-// print_r($argv);
-// // echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[41m Migration name is required.!! \033[0m\n";
-// // echo "\033[42m \033[7m\033[1m Successfully!! \033[0m \033[45m Migration created : {$argv[1]} \033[0m\n";
-// exit();
 $command = $argv[1] ?? null;
-
-// print_r($argv);
-// print_r($command);
 
 switch ($command) {
     case 'migrate':
@@ -65,87 +48,54 @@ switch ($command) {
         break;
     default:
         echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[41m X:\Deawx> Command Not Found.!! \033[0m\n";
-        // echo "\033[41m \033[7m X:\Deawx> Command Not Found.!! \033[0m\n";
         break;
 }
 
 function migrate() {
     try {
-        // Database::connect();
         Database::getInstance()->connect();
-        // echo "---------------------------------------------------------\n";
-        // echo " \033[32m Database connection successful.\n\033[0m";
-        // echo "---------------------------------------------------------\n";
-        // echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[41m Migration name is required.!! \033[0m\n";
-        // echo "\033[42m \033[7m\033[1m Successfully!! \033[0m \033[45m Migration created : {$argv[1]} \033[0m\n";
     } catch (PDOException $e) {
         echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[41m Database connection failed : " . $e->getMessage() . "\033[0m\n";
-        // echo "Database connection failed: " . $e->getMessage() . "\n\n";
         exit(1);
     }
-    // database/migrations/2024_09_10_181906_create_web_users_table.php
+
     foreach (glob(__DIR__ . '/database/migrations/*.php') as $migrationFile) {
         require_once $migrationFile;
         $class = basename($migrationFile, '.php');
         $className = preg_replace('/^[-0-9_-]+/', '', $class);
-        // echo $className . "\r\n";
         $className = str_replace('-', '', trim($className, '-'));
-        // echo $className . "\r\n\n\n";
 
-        // echo $migrationFile . "\r\n\n";
         if (class_exists($className)) {
             $migration = new $className();
             $migration->up();
-            // echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[41m Migration name is required.!! \033[0m\n";
-            // echo "\033[42m \033[7m\033[1m Successfully!! \033[0m \033[45m Migration created : {$argv[1]} \033[0m\n";
-            // echo "---------------------------------------------------------\n";
-            // echo "\033[32m\033[1m Migrated: " . $className . " \033[0m\n";
-            // echo "---------------------------------------------------------\n";
         } else {
             echo "Class does not exist: " . $className . "\n";
         }
     }
 }
 
-//
 function migratereset() {
-
     try {
-        // Database::connect();
         Database::getInstance()->connect();
-        // echo "Database connection successful.\n";
-        // echo "---------------------------------------------------------\n";
     } catch (PDOException $e) {
         echo "Database connection failed: " . $e->getMessage() . "\n\n";
         exit(1);
     }
 
-    // database/migrations/2024_09_10_181906_create_web_users_table.php
     foreach (glob(__DIR__ . '/database/migrations/*.php') as $migrationFile) {
         require_once $migrationFile;
         $class = basename($migrationFile, '.php');
         $className = preg_replace('/^[-0-9_-]+/', '', $class);
-        // echo $className . "\r\n";
         $className = str_replace('-', '', trim($className, '-'));
-        // echo $className . "\r\n\n\n";
-
-        // echo $migrationFile . "\r\n\n";
         if (class_exists($className)) {
             $migration = new $className();
             $migration->down();
-            // echo "Migrated: " . $className . "\n";
         } else {
             echo "Class does not exist: " . $className . "\n";
         }
     }
 }
-/*
-                    echo "\033[41m \033[7m X:\Deawx> Command Not Found.!! \033[0m\n";
-                            echo "\033[42m \033[7m Successfully!!\033[0m \033[45m Migration created : {$fileName} \033[0m\n";
-                        } else {
-                            // background yellow textred, background red text white
-                            echo "\033[41m \033[7m ERROR!! \033[0m \033[41m Migration name is required.!! \033[0m\n";
-                    */
+
 function makemigration($name) {
     if ($name) {
         $timestamp = date('Y_m_d_His');
@@ -171,42 +121,10 @@ function makemigration($name) {
                     \$migration->dropTable('{$name}');
             }
         }
-
-            /*
-                |--------------------------------------------------------------------------------------------------------------------------
-                | Migration Tutorial
-                | ประเภทที่รองรับในการใช้งาน
-                |--------------------------------------------------------------------------------------------------------------------------
-                |
-                |     \$table->id('ID หลัก'); // สร้างคอลัมน์ 'id' เป็น Primary Key และ Auto Increment
-                |     \$table->string('username', 255, 'ชื่อผู้ใช้งาน'); // สร้างคอลัมน์ 'username' ชนิด VARCHAR(255) และไม่เป็น NULL
-                |     \$table->string('email', 255, 'อีเมล'); // สร้างคอลัมน์ 'email' ชนิด VARCHAR(255) และไม่เป็น NULL
-                |     \$table->string('password', 255, 'รหัสผ่าน'); // สร้างคอลัมน์ 'password' ชนิด VARCHAR(255) และไม่เป็น NULL
-                |     \$table->integer('age', 'อายุ'); // สร้างคอลัมน์ 'age' ชนิด INT และไม่เป็น NULL
-                |     \$table->tinyint('status', 'สถานะ'); // สร้างคอลัมน์ 'status' ชนิด TINYINT และไม่เป็น NULL
-                |     \$table->bigint('total_points', 'คะแนนรวม'); // สร้างคอลัมน์ 'total_points' ชนิด BIGINT และไม่เป็น NULL
-                |     \$table->text('bio', 'ข้อมูลส่วนตัว'); // สร้างคอลัมน์ 'bio' ชนิด TEXT และไม่เป็น NULL
-                |     \$table->boolean('is_active', 'สถานะการใช้งาน'); // สร้างคอลัมน์ 'is_active' ชนิด BOOLEAN และไม่เป็น NULL
-                |     \$table->decimal('balance', 10, 2, 'ยอดเงินคงเหลือ'); // สร้างคอลัมน์ 'balance' ชนิด DECIMAL(10,2) และไม่เป็น NULL
-                |     \$table->date('birthdate', 'วันเกิด'); // สร้างคอลัมน์ 'birthdate' ชนิด DATE และไม่เป็น NULL
-                |     \$table->dateTime('created_at', 'สร้างเมื่อ'); // สร้างคอลัมน์ 'created_at' ชนิด DATETIME และไม่เป็น NULL
-                |     \$table->time('login_time', 'เวลาเข้าสู่ระบบ'); // สร้างคอลัมน์ 'login_time' ชนิด TIME และไม่เป็น NULL
-                |     \$table->timestamp('updated_at', 'อัปเดตเมื่อ'); // สร้างคอลัมน์ 'updated_at' ชนิด TIMESTAMP และไม่เป็น NULL
-                |     \$table->char('gender', 1, 'เพศ'); // สร้างคอลัมน์ 'gender' ชนิด CHAR(1) และไม่เป็น NULL
-                |     \$table->float('height', 5, 2, 'ส่วนสูง'); // สร้างคอลัมน์ 'height' ชนิด FLOAT(5,2) และไม่เป็น NULL
-                |     \$table->double('weight', 8, 2, 'น้ำหนัก'); // สร้างคอลัมน์ 'weight' ชนิด DOUBLE(8,2) และไม่เป็น NULL
-                |     \$table->unique('email'); // สร้าง UNIQUE constraint ที่คอลัมน์ 'email'
-                |     \$table->index('username'); // สร้าง INDEX ที่คอลัมน์ 'username'
-                |     \$table->timestamps(); // สร้างคอลัมน์ 'created_at' และ 'updated_at' ชนิด TIMESTAMP
-                |     \$table->nullable('nickname', 'VARCHAR(50)'); // สร้างคอลัมน์ 'nickname' ชนิด VARCHAR(50) และรองรับค่า NULL ได้
-                |     \$table->default('account_type', 'VARCHAR(50)', "'xxx'", 'ประเภทบัญชี'); // สร้างคอลัมน์ 'account_type' ชนิด VARCHAR(50) และมีค่าเริ่มต้นเป็น 'xxx'
-                |
-                */
         EOT;
         file_put_contents(__DIR__ . "/database/migrations/{$fileName}", $migrationTemplate);
         echo "\033[42m \033[7m Successfully!!\033[0m \033[45m Migration created : {$fileName} \033[0m\n";
     } else {
-        // background yellow textred, background red text white
         echo "\033[41m \033[7m ERROR!! \033[0m \033[41m Migration name is required.!! \033[0m\n";
     }
 }
@@ -254,7 +172,6 @@ EOT;
     }
 }
 
-
 function makemodel($name) {
     if ($name) {
         $name = ucfirst(trim($name));
@@ -268,14 +185,12 @@ use PDOException;
 use Medoo\Medoo;
 use Core\Database;
 
-
 class {$name}
 {
   private Medoo \$db;
     public function __construct() {
         \$this->db = Database::getInstance()->getConnection();
     }
-
 
 }
 EOT;
@@ -291,7 +206,6 @@ function dumpAutoload() {
     exec('composer dump-autoload');
     // สีเขียว
     echo   "\033[32m Autoload dumped successfully.\n \033[0m";
-    // echo "Autoload dumped successfully.\n";
 }
 
 function serve() {

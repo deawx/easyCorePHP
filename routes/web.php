@@ -25,17 +25,43 @@ Route::get('/', function () {
     ]);
 });
 
-// Auth routes
-Route::group('/api/v1/auth', function () {
-    Route::post('/register', 'AuthController@register');
-    Route::post('/login', 'AuthController@login');
-    Route::get('/logout', 'AuthController@logout');
+
+// routes/web.php
+Route::group('/api/v1', function () {
+    // Public routes
+    Route::post('/auth/register', 'AuthController@register');
+    Route::post('/auth/login', 'AuthController@login');
+
+    // Todo routes
+    Route::group('/todos', function () {
+        Route::get('/', 'TodoController@index');
+        Route::post('/', 'TodoController@store');
+        Route::get('/:id', 'TodoController@show');
+        Route::put('/:id', 'TodoController@update');
+        Route::delete('/:id', 'TodoController@destroy');
+    });
+
+    // Protected routes
+    Route::group('/member', [
+        'middleware' => AuthMiddleware::class,
+        function () {
+            Route::get('/profile', 'MemberController@profile');
+            Route::put('/profile', 'MemberController@update');
+        }
+    ]);
 });
 
-// Protected member routes
-Route::group('/api/v1/member', [
-    function () {
-        Route::get('/profile', 'MemberController@profile');
-    },
-    'middleware' => AuthMiddleware::class
-]);
+// // Auth routes
+// Route::group('/api/v1/auth', function () {
+//     Route::post('/register', 'AuthController@register');
+//     Route::post('/login', 'AuthController@login');
+//     Route::get('/logout', 'AuthController@logout');
+// });
+
+// // Protected member routes
+// Route::group('/api/v1/member', [
+//     function () {
+//         Route::get('/profile', 'MemberController@profile');
+//     },
+//     'middleware' => AuthMiddleware::class
+// ]);

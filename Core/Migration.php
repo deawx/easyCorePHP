@@ -32,13 +32,45 @@ class Migration {
     }
 
     public function dropTable(string $table): void {
-        $query = "DROP TABLE IF EXISTS `$table`";
         try {
-            $this->db->query($query);
-            echo "\033[42m \033[7m\033[1m Successfully!! \033[0m \033[31m Droped table : `$table` \033[0m\n\n";
-            // echo "Table `$table` dropped successfully.\n";
+            // 1. ค้นหา foreign keys ที่เกี่ยวข้องทั้งหมด
+            $sql = "SELECT
+                tc.TABLE_NAME, tc.CONSTRAINT_NAME,
+                kcu.REFERENCED_TABLE_NAME
+            FROM
+                information_schema.TABLE_CONSTRAINTS tc
+                JOIN information_schema.KEY_COLUMN_USAGE kcu
+                ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+            WHERE
+                tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+                AND tc.TABLE_SCHEMA = DATABASE()
+                AND (tc.TABLE_NAME = ? OR kcu.REFERENCED_TABLE_NAME = ?)";
+
+            $stmt = $this->db->pdo->prepare($sql);
+            $stmt->execute([$table, $table]);
+            $allForeignKeys = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+            // 2. ลบ foreign keys ทั้งหมด
+            if (!empty($allForeignKeys)) {
+                echo "\n\033[33m Found " . count($allForeignKeys) . " foreign key(s) to remove: \033[0m\n";
+                foreach ($allForeignKeys as $fk) {
+                    try {
+                        $dropFKQuery = "ALTER TABLE `{$fk['TABLE_NAME']}` DROP FOREIGN KEY `{$fk['CONSTRAINT_NAME']}`";
+                        $this->db->query($dropFKQuery);
+                        echo "\033[32m ✓ Dropped FK: {$fk['CONSTRAINT_NAME']} from {$fk['TABLE_NAME']} \033[0m\n";
+                    } catch (\PDOException $e) {
+                        echo "\033[31m ✗ Failed to drop FK: {$fk['CONSTRAINT_NAME']} - {$e->getMessage()} \033[0m\n";
+                    }
+                }
+            }
+
+            // 3. ลบตาราง
+            $dropTableQuery = "DROP TABLE IF EXISTS `$table`";
+            $this->db->query($dropTableQuery);
+            echo "\n\033[42m \033[1m SUCCESS \033[0m Dropped table: `$table` \033[0m\n\n";
         } catch (\PDOException $e) {
-            $this->handleError($e);
+            echo "\n\033[41m ERROR \033[0m Failed to drop table `$table`: {$e->getMessage()} \033[0m\n\n";
+            throw $e;
         }
     }
 
@@ -208,19 +240,23 @@ class Migration {
         return $this;
     }
 
-    public function default(string $name = '', string $type = '', mixed $default = null, string $comment = ''): self {
-        if (empty($name) && empty($type)) {
-            // ใช้สำหรับ Method Chaining
-            $lastColumn = array_pop($this->columns);
-            if ($lastColumn) {
-                $defaultValue = is_string($default) ? "'$default'" : $default;
-                $definition = $lastColumn['definition'] . " DEFAULT $defaultValue";
-                $this->columns[] = ['definition' => $definition];
+    public function default(mixed $value): self {
+        $lastIndex = array_key_last($this->columns);
+        if ($lastIndex !== null) {
+            $lastColumn = $this->columns[$lastIndex];
+            $defaultValue = match (gettype($value)) {
+                'boolean' => $value ? 1 : 0,
+                'string' => "'$value'",
+                'NULL' => 'NULL',
+                default => $value
+            };
+
+            // ปรับปรุง definition ของคอลัมน์ล่าสุด
+            $definition = $lastColumn['definition'];
+            if (!str_contains($definition, 'DEFAULT')) {
+                $definition .= " DEFAULT $defaultValue";
+                $this->columns[$lastIndex]['definition'] = $definition;
             }
-        } else {
-            // ใช้สำหรับสร้าง column with default โดยตรง
-            $defaultValue = is_string($default) ? "'$default'" : $default;
-            $this->columns[] = ['definition' => "`$name` $type NOT NULL DEFAULT $defaultValue" . $this->addComment($comment)];
         }
         return $this;
     }
@@ -276,10 +312,11 @@ class Migration {
         $columns = implode(", ", array_column($this->columns, 'definition'));
         $comment = $this->tableComment ? " COMMENT='{$this->tableComment}'" : "";
         $query = "CREATE TABLE IF NOT EXISTS {$this->table} ($columns) ENGINE=INNODB $comment;";
+        // echo $query . "\n";
+
         try {
             $this->db->query($query);
             echo "\033[42m \033[7m\033[1m Successfully!! \033[0m \033[32m Create taable : `$this->table` \033[0m\n\n";
-            // echo "Table `$this->table` created successfully.\n";
         } catch (\PDOException $e) {
             $this->handleError($e);
         }
@@ -301,185 +338,83 @@ class Migration {
         echo "\033[41m \033[7m\033[1m ERROR!! \033[0m \033[31m $errorMessage \033[0m\n\n";
     }
 }
- /*
-|--------------------------------------------------------------------------
-| คู่มือการใช้งาน Migration (ภาษาไทย)
-|--------------------------------------------------------------------------
-|
-| 1. การสร้างตารางพื้นฐาน:
-|
-| // สร้างตารางผู้ใช้งาน
-| $migration = new Migration();
-| $migration->createTable('users', function($table) {
-|     $table->id('รหัสผู้ใช้');                     // สร้าง PK อัตโนมัติ
-|     $table->string('username', 100, 'ชื่อผู้ใช้');  // VARCHAR(100)
-|     $table->string('email', 255, 'อีเมล');         // VARCHAR(255)
-|     $table->timestamp('created_at', 'วันที่สร้าง'); // TIMESTAMP
-| });
-|
-| 2. ประเภทคอลัมน์ที่รองรับ:
-|
-| $table->id('คำอธิบาย');                // INT AUTO_INCREMENT PRIMARY KEY
-| $table->integer('อายุ', 'อายุผู้ใช้');   // INT ธรรมดา
-| $table->string('ชื่อ', 'ชื่อผู้ใช้');    // VARCHAR(255)
-| $table->text('เนื้อหา', 'บทความ');      // TEXT เก็บข้อความยาว
-| $table->float('ราคา', 'ราคาสินค้า');    // FLOAT ทศนิยม
-| $table->boolean('สถานะ', 'เปิด/ปิด');   // TINYINT(1) เก็บค่า true/false
-| $table->datetime('เวลา', 'เวลาสร้าง');   // DATETIME
-|
-| 3. ตัวปรับแต่งคอลัมน์:
-|
-| $table->string('email')->unique();         // ห้ามข้อมูลซ้ำ
-| $table->integer('points')->default(0);     // กำหนดค่าเริ่มต้น
-| $table->string('address')->nullable();     // อนุญาตให้เป็น NULL
-|
-| 4. การสร้าง Foreign Key:
-|
-| // สร้างตารางสินค้า
-| $migration->createTable('products', function($table) {
-|     $table->id('รหัสสินค้า');
-|     $table->integer('category_id', 'รหัสหมวดหมู่');
-|     $table->string('name', 100, 'ชื่อสินค้า');
-|     // สร้าง FK เชื่อมกับตาราง categories
-|     $table->foreignKey('category_id', 'categories', 'id', 'CASCADE', 'SET NULL');
-| });
-|
-| 5. ตัวอย่างการใช้งานจริง:
-|
-| // สร้างตารางคำสั่งซื้อ
-| $migration->createTable('orders', function($table) {
-|     $table->id('รหัสคำสั่งซื้อ');
-|     $table->integer('user_id', 'รหัสผู้ซื้อ');
-|     $table->float('total', 'ยอดรวม')->default(0.00);
-|     $table->string('status', 50, 'สถานะ')->default('pending');
-|     $table->timestamp('order_date', 'วันที่สั่งซื้อ');
-|     $table->text('note', 'หมายเหตุ')->nullable();
-|     $table->foreignKey('user_id', 'users', 'id', 'CASCADE', 'CASCADE');
-| });
-|
-| หมายเหตุ:
-| - ควรตั้งชื่อตารางเป็นภาษาอังกฤษและเป็นพหูพจน์
-| - สามารถใส่คำอธิบายภาษาไทยในทุกคอลัมน์
-| - ควรสร้างตารางหลักก่อนสร้าง Foreign Key เสมอ
-| - CASCADE หมายถึง เมื่อลบข้อมูลหลัก ข้อมูลที่เชื่อมโยงจะถูกลบด้วย
-| - SET NULL หมายถึง เมื่อลบข้อมูลหลัก ข้อมูลที่เชื่อมโยงจะกลายเป็น NULL
-*/
 
-/*
-|--------------------------------------------------------------------------
-| ประเภทคอลัมน์ที่รองรับทั้งหมด
-|--------------------------------------------------------------------------
-|
-| 1. คอลัมน์พื้นฐาน:
-| $table->id('คำอธิบาย');                    // INT AUTO_INCREMENT PRIMARY KEY
-| $table->primaryKey('id', 'คำอธิบาย');      // กำหนด Primary Key เอง
-| $table->foreignKey('user_id', 'users', 'id'); // สร้าง Foreign Key
-|
-| 2. ตัวเลข:
-| $table->tinyInteger('age', 'อายุ');        // TINYINT (-128 ถึง 127)
-| $table->smallInteger('year', 'ปี');        // SMALLINT (-32,768 ถึง 32,767)
-| $table->integer('amount', 'จำนวน');        // INT (-2^31 ถึง 2^31-1)
-| $table->bigInteger('population', 'ประชากร'); // BIGINT (-2^63 ถึง 2^63-1)
-| $table->decimal('price', 10, 2, 'ราคา');    // DECIMAL(10,2) ทศนิยมแม่นยำ
-| $table->float('weight', 'น้ำหนัก');        // FLOAT ทศนิยม
-| $table->double('distance', 'ระยะทาง');      // DOUBLE ทศนิยมความละเอียดสูง
-|
-| 3. ข้อความ:
-| $table->char('code', 3, 'รหัส');           // CHAR(3) ความยาวคงที่
-| $table->string('name', 255, 'ชื่อ');       // VARCHAR(255) ความยาวไม่เกิน 255
-| $table->text('description', 'รายละเอียด');   // TEXT ข้อความยาว
-| $table->mediumText('content', 'เนื้อหา');   // MEDIUMTEXT (~16MB)
-| $table->longText('data', 'ข้อมูล');        // LONGTEXT (~4GB)
-|
-| 4. วันที่และเวลา:
-| $table->date('birth_date', 'วันเกิด');      // DATE (YYYY-MM-DD)
-| $table->time('start_time', 'เวลาเริ่ม');    // TIME (HH:MM:SS)
-| $table->datetime('event_at', 'วันที่จัด');   // DATETIME (YYYY-MM-DD HH:MM:SS)
-| $table->timestamp('created_at', 'สร้างเมื่อ'); // TIMESTAMP ตามเวลา UTC
-| $table->year('grad_year', 'ปีที่จบ');       // YEAR (1901 ถึง 2155)
-|
-| 5. พิเศษ:
-| $table->boolean('active', 'สถานะ');        // TINYINT(1) เก็บ true/false
-| $table->enum('status', ['draft','published']); // ENUM ค่าที่กำหนด
-| $table->json('settings', 'การตั้งค่า');      // JSON เก็บข้อมูล JSON
-| $table->binary('file', 'ไฟล์');            // BINARY เก็บไฟล์ไบนารี
-|
-| 6. ตัวอย่างการใช้งาน:
-| $migration->createTable('products', function($table) {
-|     $table->id('รหัสสินค้า');                      // Primary Key อัตโนมัติ
-|     $table->string('name', 100, 'ชื่อสินค้า');      // VARCHAR(100)
-|     $table->decimal('price', 10, 2, 'ราคา');       // ราคาทศนิยม 2 ตำแหน่ง
-|     $table->text('description', 'รายละเอียด');      // ข้อความยาว
-|     $table->enum('status', ['active','inactive']);  // สถานะที่กำหนด
-|     $table->timestamp('created_at', 'สร้างเมื่อ');   // วันที่สร้าง
-| });
-*/
 
 
 /*
 |--------------------------------------------------------------------------
-| Migration Tutorial
+| คู่มือการใช้งาน Migration System
 |--------------------------------------------------------------------------
-|
-| $migration = new Migration();
-|
-| // สร้างตารางใหม่ 'demo'
-| $migration->createTable('demo', function($table) {
-|     $table->id('ID หลัก'); // สร้างคอลัมน์ 'id' เป็น Primary Key และ Auto Increment
-|     $table->string('username', 255, 'ชื่อผู้ใช้งาน'); // สร้างคอลัมน์ 'username' ชนิด VARCHAR(255) และไม่เป็น NULL
-|     $table->string('email', 255, 'อีเมล'); // สร้างคอลัมน์ 'email' ชนิด VARCHAR(255) และไม่เป็น NULL
-|     $table->string('password', 255, 'รหัสผ่าน'); // สร้างคอลัมน์ 'password' ชนิด VARCHAR(255) และไม่เป็น NULL
-|     $table->integer('age', 'อายุ'); // สร้างคอลัมน์ 'age' ชนิด INT และไม่เป็น NULL
-|     $table->tinyint('status', 'สถานะ'); // สร้างคอลัมน์ 'status' ชนิด TINYINT และไม่เป็น NULL
-|     $table->bigint('total_points', 'คะแนนรวม'); // สร้างคอลัมน์ 'total_points' ชนิด BIGINT และไม่เป็น NULL
-|     $table->text('bio', 'ข้อมูลส่วนตัว'); // สร้างคอลัมน์ 'bio' ชนิด TEXT และไม่เป็น NULL
-|     $table->boolean('is_active', 'สถานะการใช้งาน'); // สร้างคอลัมน์ 'is_active' ชนิด BOOLEAN และไม่เป็น NULL
-|     $table->decimal('balance', 10, 2, 'ยอดเงินคงเหลือ'); // สร้างคอลัมน์ 'balance' ชนิด DECIMAL(10,2) และไม่เป็น NULL
-|     $table->date('birthdate', 'วันเกิด'); // สร้างคอลัมน์ 'birthdate' ชนิด DATE และไม่เป็น NULL
-|     $table->dateTime('created_at', 'สร้างเมื่อ'); // สร้างคอลัมน์ 'created_at' ชนิด DATETIME และไม่เป็น NULL
-|     $table->time('login_time', 'เวลาเข้าสู่ระบบ'); // สร้างคอลัมน์ 'login_time' ชนิด TIME และไม่เป็น NULL
-|     $table->timestamp('updated_at', 'อัปเดตเมื่อ'); // สร้างคอลัมน์ 'updated_at' ชนิด TIMESTAMP และไม่เป็น NULL
-|     $table->char('gender', 1, 'เพศ'); // สร้างคอลัมน์ 'gender' ชนิด CHAR(1) และไม่เป็น NULL
-|     $table->float('height', 5, 2, 'ส่วนสูง'); // สร้างคอลัมน์ 'height' ชนิด FLOAT(5,2) และไม่เป็น NULL
-|     $table->double('weight', 8, 2, 'น้ำหนัก'); // สร้างคอลัมน์ 'weight' ชนิด DOUBLE(8,2) และไม่เป็น NULL
-|     $table->unique('email'); // สร้าง UNIQUE constraint ที่คอลัมน์ 'email'
-|     $table->index('username'); // สร้าง INDEX ที่คอลัมน์ 'username'
-|     $table->timestamps(); // สร้างคอลัมน์ 'created_at' และ 'updated_at' ชนิด TIMESTAMP
-|     $table->nullable('nickname', 'VARCHAR(50)'); // สร้างคอลัมน์ 'nickname' ชนิด VARCHAR(50) และรองรับค่า NULL ได้
-|     $table->default('account_type', 'VARCHAR(50)', "'standard'", 'ประเภทบัญชี'); // สร้างคอลัมน์ 'account_type' ชนิด VARCHAR(50) และมีค่าเริ่มต้นเป็น 'standard'
-| }, 'ตารางตัวอย่าง');
-|
-| // แก้ไขตาราง 'demo'
-| $migration->modifyTable('demo', function($table) {
-|     $table->string('profile_picture', 255, 'รูปประจำตัว'); // เพิ่มคอลัมน์ 'profile_picture' ชนิด VARCHAR(255) และไม่เป็น NULL
-|     $table->modifyColumn('username', 'VARCHAR(512)', 'ชื่อผู้ใช้งานยาวขึ้น'); // แก้ไขคอลัมน์ 'username' ให้ยาวขึ้นเป็น 512 ตัวอักษร
-| });
-|
-| // ลบตาราง 'demo'
-| $migration->dropTable('demo');
-|
-| // เปลี่ยนชื่อตารางจาก 'demo' เป็น 'members'
-| $migration->renameTable('demo', 'members');
-|
-| // เปลี่ยนชื่อคอลัมน์จาก 'username' เป็น 'user_name'
-| $migration->renameColumn('username', 'user_name');
-|
-| // แก้ไขคอลัมน์ 'email' ให้รองรับค่า NULL ได้
-| $migration->modifyColumn('email', 'VARCHAR(255) NULL', 'อีเมลสามารถเป็นค่า NULL ได้');
-|
-| // ลบคอลัมน์ 'profile_picture'
-| $migration->dropColumn('profile_picture');
-|
-| // เพิ่มดัชนี (index) ที่คอลัมน์ 'email'
-| $migration->addIndex('email');
-|
-| // ลบดัชนี (index) ที่คอลัมน์ 'email'
-| $migration->dropIndex('email');
-|
-| // เพิ่ม Foreign Key ที่คอลัมน์ 'role_id' เชื่อมโยงกับตาราง 'roles' ที่คอลัมน์ 'id'
-| $migration->foreign('role_id', 'id', 'roles');
-|
-| // ลบ Foreign Key ที่ชื่อ 'role_id_foreign'
-| $migration->dropForeign('role_id_foreign');
-|
+
+1. การสร้าง Migration:
+$migration = new Migration();
+
+2. สร้างตารางพื้นฐาน:
+$migration->createTable('users', function($table) {
+    $table->id('รหัสผู้ใช้');
+    $table->string('username', 100, 'ชื่อผู้ใช้');
+    $table->string('email', 255, 'อีเมล')->unique();
+    $table->timestamp('created_at', 'วันที่สร้าง');
+});
+
+3. ประเภทคอลัมน์ที่รองรับ:
+// ตัวเลข
+$table->id('คำอธิบาย');                    // INT AUTO_INCREMENT PRIMARY KEY
+$table->tinyInteger('age', 'อายุ');        // TINYINT (-128 ถึง 127)
+$table->smallInteger('year', 'ปี');        // SMALLINT (-32,768 ถึง 32,767)
+$table->integer('amount', 'จำนวน');        // INT ปกติ
+$table->bigInteger('views', 'ยอดวิว');      // BIGINT
+$table->decimal('price', 10, 2, 'ราคา');   // DECIMAL(10,2)
+$table->float('weight', 'น้ำหนัก');        // FLOAT
+$table->double('distance', 'ระยะทาง');      // DOUBLE
+
+// ข้อความ
+$table->char('code', 3, 'รหัส');           // CHAR(3)
+$table->string('name', 255, 'ชื่อ');       // VARCHAR(255)
+$table->text('desc', 'รายละเอียด');         // TEXT
+$table->mediumText('content', 'เนื้อหา');   // MEDIUMTEXT
+$table->longText('data', 'ข้อมูล');        // LONGTEXT
+
+// วันที่และเวลา
+$table->date('birth_date', 'วันเกิด');      // DATE
+$table->time('open_time', 'เวลาเปิด');      // TIME
+$table->datetime('event_at', 'วันที่จัด');   // DATETIME
+$table->timestamp('created_at', 'สร้างเมื่อ'); // TIMESTAMP
+$table->year('grad_year', 'ปีที่จบ');       // YEAR
+
+// พิเศษ
+$table->boolean('active', 'สถานะ');         // TINYINT(1)
+$table->enum('status', ['draft','published'], 'สถานะ'); // ENUM
+$table->json('settings', 'การตั้งค่า');      // JSON
+
+4. Modifiers (ตัวปรับแต่ง):
+->nullable()      // อนุญาต NULL
+->unique()        // ห้ามซ้ำ
+->default(value)  // ค่าเริ่มต้น
+->unsigned()      // เฉพาะค่าบวก
+->index()         // สร้าง Index
+->primary()       // Primary Key
+
+5. ตัวอย่างการใช้งานจริง:
+// สร้างตารางสินค้า
+$migration->createTable('products', function($table) {
+    $table->id('รหัสสินค้า');
+    $table->string('name', 100, 'ชื่อสินค้า')->unique();
+    $table->text('description', 'รายละเอียด')->nullable();
+    $table->decimal('price', 10, 2, 'ราคา');
+    $table->integer('stock', 'สินค้าคงเหลือ')->default(0);
+    $table->integer('category_id', 'รหัสหมวดหมู่');
+    $table->enum('status', ['active','inactive'], 'สถานะ');
+    $table->timestamp('created_at', 'วันที่สร้าง');
+    $table->foreignKey('category_id', 'categories', 'id', 'CASCADE', 'SET NULL');
+});
+
+6. Foreign Keys:
+->foreignKey('คอลัมน์', 'ตารางอ้างอิง', 'คอลัมน์อ้างอิง', 'ON DELETE', 'ON UPDATE')
+
+ON DELETE/UPDATE options:
+- CASCADE = ลบ/อัพเดทตามต้นทาง
+- SET NULL = กำหนดเป็น NULL
+- RESTRICT = ห้ามลบถ้ามีการอ้างอิง
+- NO ACTION = ไม่ทำอะไร
 */
